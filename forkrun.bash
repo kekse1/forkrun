@@ -446,7 +446,7 @@ forkrun() {
             else
                 delimiterVal="$(printf '%q' "${delimiterVal}")"
                  ${lseekFlag} || {
-                     ${noFuncFlag} && delimiterRemoveStr='//'"${delimiterVal}"'/\$'"'"'\n'"'" || delimiterRemoveStr="%${delimiterVal}"
+                     ${noFuncFlag} && delimiterRemoveStr='//'"${delimiterVal}"'/;$'"'"'\n'"'" || delimiterRemoveStr="%${delimiterVal}"
                  }
                 delimiterReadStr="-d ${delimiterVal}"
             fi
@@ -857,15 +857,16 @@ else
                     echo "[[ \"\${REPLY}\" == ${delimiterVal} ]] || {"
                 fi
         elif ${nullDelimiterFlag}; then
-            echo """
-                read -r fd_read_pos </proc/self/fdinfo/${fd_read}"""
+                echo """
+                IFS=\$'\\t' read -r _ fd_read_pos </proc/self/fdinfo/${fd_read}"""
             case "${nullDelimiterProg}" in
               'dd') echo """
                 { dd if=\"${fPath}\" bs=1 count=1 ${ddQuietStr} skip=\$(( \${fd_read_pos##*\$'\t'} - 1 )) | read -t 1 -r -d ''; } || {"""
               ;;
-              'bash') echo """
-                read -r fd_read_pos0 </proc/self/fdinfo/${fd_read0}
-                nBytes=\$(( \${fd_read_pos##*\$'\t'} - \${fd_read_pos0##*\$'\t'} - \${#A[@]} ))"""
+              'bash')
+                    echo """
+                IFS=\$'\\t' read -r _ fd_read_pos0 </proc/self/fdinfo/${fd_read0}
+                nBytes=\$(( fd_read_pos - fd_read_pos0 - \${#A[@]} ))"""
                 if ${ddAvailableFlag}; then 
                   echo """
                     {
@@ -908,10 +909,19 @@ ${nQueueFlag} && echo "printf '%s' '-' >&${fd_nQueue}"
 echo """
     [[ \${#A[@]} == 0 ]] && {
         \${doneIndicatorFlag} || { 
-          [[ -f \"${tmpDir}\"/.done ]] && {
-            read -r fd_read_pos </proc/self/fdinfo/${fd_read}
-            read -r fd_write_pos </proc/self/fdinfo/${fd_write}
-            [[ \"\${fd_read_pos##*$'\t'}\" == \"\${fd_write_pos##*$'\t'}\" ]] && doneIndicatorFlag=true
+          [[ -f \"${tmpDir}\"/.done ]] && {"""
+            if ${lseekFlag}; then 
+                echo """
+            lseek $fd_read 0 SEEK_CUR fd_read_pos 
+            lseek $fd_write 0 SEEK_CUR fd_write_pos"""
+            else
+                echo """
+            IFS=\$'\\t' read -r _ fd_read_pos </proc/self/fdinfo/${fd_read};
+            IFS=\$'\\t' read -r _ fd_write_pos </proc/self/fdinfo/${fd_write}; 
+                """
+            fi
+            echo """
+            [[ \"\${fd_read_pos}\" == \"\${fd_write_pos}\" ]] && doneIndicatorFlag=true
           }
         }
         if \${doneIndicatorFlag} || [[ -f \"${tmpDir}\"/.quit ]]; then"""
@@ -951,7 +961,6 @@ ${pipeReadFlag} || ${nullDelimiterFlag} || ${readBytesFlag} || ${lseekFlag} || {
 ${subshellRunFlag} && echo '(' || echo '{'
 { ${exportOrderFlag} || { ${nOrderFlag} && ${substituteStringIDFlag}; }; } && echo 'nOrder0="$(( ${nOrder##*(9)*(0)} + ${nOrder%%*(0)${nOrder##*(9)*(0)}}0 - 9 ))"'
 ${exportOrderFlag} && echo "printf '\034%s:\035\n' \"\${nOrder0}\""
-${noFuncFlag} && echo 'IFS=$'"'"'\n'"'"
 printf '%s ' "${runCmd[@]}"
 if ${readBytesFlag} && ! { [[ ${readBytesProg} == 'bash' ]] && ! ${stdinRunFlag}; }; then
     if ${stdinRunFlag} || ${noFuncFlag}; then 
@@ -981,7 +990,6 @@ fi
         } >&${fd_stderr}
     }"""
 ${readBytesFlag} && { [[ ${readBytesProg//bash/} ]] || ${stdinRunFlag}; } && printf '\n\\rm -f "'"${tmpDir}"'"/.stdin.tmp.{<#>}\n'
-${noFuncFlag} && echo 'IFS='
 ${subshellRunFlag} && printf '\n%s ' ')' || printf '\n%s ' '}'
 echo "${outStr}"
 ${nOrderFlag} && echo "printf '%s\n' \"\${nOrder}\" >&${fd_nOrder0}"
